@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>University Management System</title>
+    <style>
+        :root{--bg:#f3f5fa;--card:#fff;--ink:#1f2937;--muted:#6b7280;--line:#e5e7eb;--brand:#2563eb;--bad:#dc2626}
+        *{box-sizing:border-box}
+        body{margin:0;font-family:system-ui,"Segoe UI",Arial,sans-serif;background:var(--bg);color:var(--ink)}
+        .hidden{display:none!important}
+        .wrap{max-width:1040px;margin:0 auto;padding:24px 16px}
+        .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px;margin-bottom:16px}
+        h1{font-size:22px;margin:0}
+        h2{font-size:17px;margin:0 0 12px}
+        .muted{color:var(--muted);font-size:13px}
+        input,button{font:inherit}
+        input{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:#fff}
+        input:focus{outline:2px solid #bfdbfe;border-color:var(--brand)}
+        label{display:block;font-size:13px;margin:10px 0 4px;color:var(--muted)}
+        button{cursor:pointer;border:1px solid var(--line);background:#fff;border-radius:8px;padding:8px 14px}
+        button:hover{background:#f9fafb}
+        .primary{background:var(--brand);border-color:var(--brand);color:#fff}
+        .primary:hover{background:#1d4ed8}
+        .danger{color:var(--bad);border-color:#fecaca}
+        .login{max-width:380px;margin:80px auto}
+        .login h1{margin-bottom:4px}
+        .login button{width:100%;margin-top:16px}
+        .top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+        .badge{display:inline-block;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600;background:#dbeafe;color:#1e40af}
+        .badge.TEACHER{background:#dcfce7;color:#166534}
+        .badge.STUDENT{background:#fef3c7;color:#92400e}
+        .tabs{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+        .tab{border-radius:999px}
+        .tab.active{background:var(--brand);color:#fff;border-color:var(--brand)}
+        .row{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:8px;flex-wrap:wrap}
+        .tablewrap{overflow-x:auto}
+        table{width:100%;border-collapse:collapse;font-size:14px}
+        th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+        th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+        td.act{display:flex;gap:6px}
+        td.act button{padding:4px 10px;font-size:13px}
+        .empty{padding:20px;text-align:center;color:var(--muted)}
+        dialog{border:1px solid var(--line);border-radius:12px;padding:22px;width:min(440px,92vw)}
+        dialog::backdrop{background:rgba(0,0,0,.35)}
+        .btns{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+        #toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#111827;color:#fff;padding:10px 18px;border-radius:8px;font-size:14px;max-width:90vw}
+        #toast.err{background:var(--bad)}
+        .err-text{color:var(--bad);font-size:13px;margin-top:10px;min-height:18px}
+    </style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="loginView" class="wrap hidden">
+    <div class="card login">
+        <h1>University Management System</h1>
+        <div class="muted">Sign in to continue</div>
+        <form id="loginForm">
+            <label for="lu">Username</label>
+            <input id="lu" autocomplete="username" required>
+            <label for="lp">Password</label>
+            <input id="lp" type="password" autocomplete="current-password" required>
+            <button class="primary" type="submit">Login</button>
+            <div id="loginErr" class="err-text"></div>
+        </form>
+    </div>
+</div>
+
+<!-- APP -->
+<div id="appView" class="wrap hidden">
+    <div class="card top">
+        <div>
+            <h1>University Management System</h1>
+            <div class="muted">Signed in as <b id="who"></b> <span id="roleBadge" class="badge"></span></div>
+        </div>
+        <button id="logoutBtn">Logout</button>
+    </div>
+
+    <div id="tabs" class="tabs"></div>
+
+    <div class="card">
+        <div class="row">
+            <h2 id="title" style="margin:0"></h2>
+            <button id="addBtn" class="primary">+ Add new</button>
+        </div>
+        <div class="tablewrap"><table id="tbl"></table></div>
+    </div>
+</div>
+
+<!-- ADD / EDIT FORM -->
+<dialog id="dlg">
+    <form id="dlgForm">
+        <h2 id="dlgTitle"></h2>
+        <div id="dlgFields"></div>
+        <div id="dlgErr" class="err-text"></div>
+        <div class="btns">
+            <button type="button" id="dlgCancel">Cancel</button>
+            <button type="submit" class="primary">Save</button>
+        </div>
+    </form>
+</dialog>
+
+<div id="toast" class="hidden"></div>
+
+<script>
+    const RES = {
+        admins:   { label: 'Admins',   fields: [['name','Name'],['email','Email','email'],['username','Username'],['password','Password','password']] },
+        teachers: { label: 'Teachers', fields: [['name','Name'],['email','Email','email'],['department','Department'],['username','Username'],['password','Password','password']] },
+        students: { label: 'Students', fields: [['name','Name'],['email','Email','email'],['studentId','Student ID'],['department','Department'],['username','Username'],['password','Password','password']] }
+    };
+    // which tabs each role can see (the server enforces the same rules)
+    const ACCESS = { ADMIN: ['admins','teachers','students'], TEACHER: ['teachers'], STUDENT: ['students'] };
+
+    const $ = id => document.getElementById(id);
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    let me = null, cur = null, rows = [], editId = null;
+
+    function toast(msg, isErr) {
+        const t = $('toast');
+        t.textContent = msg;
+        t.className = isErr ? 'err' : '';
+        clearTimeout(toast.t);
+        toast.t = setTimeout(() => t.classList.add('hidden'), 3500);
+    }
+
+    async function api(method, url, body, form) {
+        const opt = { method, credentials: 'same-origin', headers: {} };
+        if (body) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
+        if (form) { opt.headers['Content-Type'] = 'application/x-www-form-urlencoded'; opt.body = new URLSearchParams(form); }
+        const res = await fetch(url, opt);
+        const text = await res.text();
+        let data = null;
+        if (text) { try { data = JSON.parse(text); } catch (e) { data = text; } }
+        return { status: res.status, ok: res.ok, data };
+    }
+
+    function errMsg(r) {
+        const d = r.data;
+        if (d && typeof d === 'object') {
+            if (d.details) return Object.entries(d.details).map(([k, v]) => k + ': ' + v).join(', ');
+            if (d.error) return d.error;
+        }
+        if (r.status === 403) return 'Access denied: your role is not allowed to do this';
+        if (r.status === 401) return 'You are not logged in';
+        return 'Request failed (' + r.status + ')';
+    }
+
+    /* ---------- auth ---------- */
+    function showLogin() {
+        me = null;
+        $('appView').classList.add('hidden');
+        $('loginView').classList.remove('hidden');
+        $('loginErr').textContent = '';
+        $('lp').value = '';
+    }
+
+    function showApp() {
+        $('loginView').classList.add('hidden');
+        $('appView').classList.remove('hidden');
+        $('who').textContent = me.username;
+        const b = $('roleBadge');
+        b.textContent = me.role;
+        b.className = 'badge ' + me.role;
+        const tabs = $('tabs');
+        tabs.innerHTML = '';
+        ACCESS[me.role].forEach(name => {
+            const btn = document.createElement('button');
+            btn.className = 'tab';
+            btn.dataset.tab = name;
+            btn.textContent = RES[name].label;
+            tabs.appendChild(btn);
+        });
+        setTab(ACCESS[me.role][0]);
+    }
+
+    async function loadMe() {
+        const r = await api('GET', '/api/me');
+        if (r.ok) { me = r.data; showApp(); } else { showLogin(); }
+    }
+
+    $('loginForm').addEventListener('submit', async e => {
+        e.preventDefault();
+        const r = await api('POST', '/api/auth/login', null, { username: $('lu').value.trim(), password: $('lp').value });
+        if (r.ok) { await loadMe(); } else { $('loginErr').textContent = errMsg(r); }
+    });
+
+    $('logoutBtn').addEventListener('click', async () => {
+        await api('POST', '/api/auth/logout');
+        showLogin();
+    });
+
+    /* ---------- list ---------- */
+    function setTab(name) {
+        cur = name;
+        document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+        $('title').textContent = RES[name].label;
+        load();
+    }
+
+    async function load() {
+        const cols = ['id', ...RES[cur].fields.filter(f => f[0] !== 'password').map(f => f[0])];
+        const head = '<tr>' + cols.map(c => '<th>' + esc(c) + '</th>').join('') + '<th>Actions</th></tr>';
+        const r = await api('GET', '/api/' + cur);
+        if (r.status === 401) { showLogin(); return; }
+        if (!r.ok) {
+            $('tbl').innerHTML = head + '<tr><td class="empty" colspan="' + (cols.length + 1) + '">' + esc(errMsg(r)) + '</td></tr>';
+            return;
+        }
+        rows = r.data;
+        if (!rows.length) {
+            $('tbl').innerHTML = head + '<tr><td class="empty" colspan="' + (cols.length + 1) + '">No records yet. Click "Add new".</td></tr>';
+            return;
+        }
+        $('tbl').innerHTML = head + rows.map(row =>
+            '<tr>' + cols.map(c => '<td>' + esc(row[c]) + '</td>').join('') +
+            '<td class="act"><button data-edit="' + row.id + '">Edit</button><button class="danger" data-del="' + row.id + '">Delete</button></td></tr>'
+        ).join('');
+    }
+
+    $('tabs').addEventListener('click', e => { if (e.target.dataset.tab) setTab(e.target.dataset.tab); });
+
+    $('tbl').addEventListener('click', async e => {
+        const editRowId = e.target.dataset.edit, delId = e.target.dataset.del;
+        if (editRowId) openForm(rows.find(r => String(r.id) === editRowId));
+        if (delId && confirm('Delete this record?')) {
+            const r = await api('DELETE', '/api/' + cur + '/' + delId);
+            if (r.ok) { toast('Deleted'); load(); } else { toast(errMsg(r), true); }
+        }
+    });
+
+    /* ---------- add / edit form ---------- */
+    function openForm(row) {
+        editId = row ? row.id : null;
+        $('dlgTitle').textContent = (row ? 'Edit ' : 'Add ') + RES[cur].label.slice(0, -1);
+        $('dlgErr').textContent = '';
+        $('dlgFields').innerHTML = RES[cur].fields.map(([key, label, type]) => {
+            const isPw = key === 'password';
+            const val = row && !isPw ? row[key] : '';
+            return '<label for="f_' + key + '">' + esc(label) + (isPw && row ? ' (leave empty to keep current)' : '') + '</label>' +
+                '<input id="f_' + key + '" name="' + key + '" type="' + (type || 'text') + '" value="' + esc(val) + '"' +
+                (isPw ? (row ? ' minlength="6"' : ' required minlength="6"') : (key === 'department' ? '' : ' required')) + '>';
+        }).join('');
+        $('dlg').showModal();
+    }
+
+    $('addBtn').addEventListener('click', () => openForm(null));
+    $('dlgCancel').addEventListener('click', () => $('dlg').close());
+
+    $('dlgForm').addEventListener('submit', async e => {
+        e.preventDefault();
+        const body = {};
+        RES[cur].fields.forEach(([key]) => {
+            const v = $('f_' + key).value.trim();
+            if (key === 'password' && v === '') return;   // empty on edit = keep current password
+            body[key] = v;
+        });
+        const r = editId
+            ? await api('PUT', '/api/' + cur + '/' + editId, body)
+            : await api('POST', '/api/' + cur, body);
+        if (r.ok) { $('dlg').close(); toast(editId ? 'Updated' : 'Created'); load(); }
+        else { $('dlgErr').textContent = errMsg(r); }
+    });
+
+    loadMe();
+</script>
+</body>
+</html>
